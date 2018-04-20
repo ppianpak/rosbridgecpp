@@ -5,8 +5,6 @@
 
 #include "rosbridge_ws_client.hpp"
 
-#include <chrono>
-
 RosbridgeWsClient rbc("localhost:9090");
 
 void callback(std::shared_ptr<WsClient::Connection> connection, std::shared_ptr<WsClient::Message> message)
@@ -17,7 +15,11 @@ void callback(std::shared_ptr<WsClient::Connection> connection, std::shared_ptr<
 void callback2(std::shared_ptr<WsClient::Connection> connection, std::shared_ptr<WsClient::Message> message)
 {
   std::cout << "callback2: " << message->string() << std::endl;
-  rbc.serviceResponse("/zservice", false);
+
+  auto send_stream = std::make_shared<WsClient::SendStream>();
+  std::string m = "{\"op\":\"service_response\", \"service\":\"/zservice\", \"result\":true, \"id\":\"service_request:/zservice:1\", \"values\":{}}";
+  *send_stream << m;
+  connection->send(send_stream);
 }
 
 int main() {
@@ -34,33 +36,45 @@ int main() {
   // 3. Stringify the DOM
   rapidjson::StringBuffer buffer;
   rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
-  document.Accept(writer);
+  d.Accept(writer);
   std::cout << buffer.GetString() << std::endl;
 
   rbc.addClient("client01");
   rbc.addClient("client02");
   rbc.addClient("client03");
-  rbc.addClient("client04");
-  rbc.addClient("client05");
-  rbc.removeClient("client05");
+//  rbc.addClient("client04");
+//  rbc.subscribe("client04", "/uav0/ground_truth_to_tf/pose", nullptr);
+//  rbc.addClient("client05");
+//  rbc.subscribe("client05", "/uav0/ground_truth_to_tf/pose", nullptr);
 
   rbc.advertise("client01", "/z", "std_msgs/Int32");
-  rbc.advertiseService("client02", "/zservice", "std_srvs/Empty", callback2);
-  rbc.subscribe("client03", "/uav0/ground_truth_to_tf/pose", callback);
+  rapidjson::Document dd;
+  dd.SetObject();
+  dd.AddMember("data", 12345, dd.GetAllocator());
+  rbc.publish("client02", "/z", dd);
 
-  while(true)
-  {
-    rapidjson::Document d;
-    d.SetObject();
-    d.AddMember("data", 12345, d.GetAllocator());
-    rbc.publish("client04", "/z", d);
-    std::this_thread::sleep_for(std::chrono::milliseconds(2000));
-  }
+  std::cout << "-> Sleeping1" << std::endl;
+  std::this_thread::sleep_for(std::chrono::milliseconds(5000));
+  std::cout << "& Sleeping1" << std::endl;
 
-//  std::cout << "-> Sleeping1" << std::endl;
-//  std::this_thread::sleep_for(std::chrono::milliseconds(1000));
-//  std::cout << "& Sleeping1" << std::endl;
+  rbc.removeClient("client02");
+
+  std::cout << "-> Sleeping2" << std::endl;
+  std::this_thread::sleep_for(std::chrono::milliseconds(5000));
+  std::cout << "& Sleeping2" << std::endl;
+
+//  rbc.advertiseService("client02", "/zservice", "std_srvs/Empty", NULL);
+//  rbc.subscribe("client03", "/uav0/ground_truth_to_tf/pose", callback);
 //
+//  while(true)
+//  {
+//    rapidjson::Document d;
+//    d.SetObject();
+//    d.AddMember("data", 12345, d.GetAllocator());
+//    rbc.publish("client04", "/z", d);
+//    std::this_thread::sleep_for(std::chrono::milliseconds(2000));
+//  }
+
 //  rbc.stopClient("client03");
 //  std::cout << "-> Sleeping2" << std::endl;
 //  std::this_thread::sleep_for(std::chrono::milliseconds(1000));

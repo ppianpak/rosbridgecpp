@@ -12,98 +12,61 @@
 #include "rapidjson/include/rapidjson/writer.h"
 #include "rapidjson/include/rapidjson/stringbuffer.h"
 
+#include <chrono>
 #include <functional>
 #include <thread>
 
 using WsClient = SimpleWeb::SocketClient<SimpleWeb::WS>;
+using OnMessage =  std::function<void(std::shared_ptr<WsClient::Connection>, std::shared_ptr<WsClient::Message>)>;
 
 class RosbridgeWsClient
 {
   std::string server_port_path;
   std::unordered_map<std::string, WsClient*> client_map;
 
-  void start(const std::string& client_name, WsClient* client, const std::string& command, const std::function<void(std::shared_ptr<WsClient::Connection> connection, std::shared_ptr<WsClient::Message> message)>& callback, bool persist_connection = true, bool one_message = true)
+  void start(const std::string& client_name, WsClient* client, const std::string& message)
   {
-    if (strcmp(client->on_open.target_type().name(), "v") == 0)
+    if (!client->on_open)
     {
 #ifdef DEBUG
-      client->on_open = [client_name, command, persist_connection](std::shared_ptr<WsClient::Connection> connection) {
+      client->on_open = [client_name, message](std::shared_ptr<WsClient::Connection> connection) {
 #else
-      client->on_open = [command, persist_connection](std::shared_ptr<WsClient::Connection> connection) {
+      client->on_open = [message](std::shared_ptr<WsClient::Connection> connection) {
 #endif
 
 #ifdef DEBUG
         std::cout << "Client " << client_name << ": Opened connection" << std::endl;
-        std::cout << "Client " << client_name << ": Sending command: \"" << command << "\"" << std::endl;
+        std::cout << "Client " << client_name << ": Sending message: \"" << message << "\"" << std::endl;
 #endif
         auto send_stream = std::make_shared<WsClient::SendStream>();
-        *send_stream << command;
+        *send_stream << message;
         connection->send(send_stream);
-
-        if (!persist_connection)
-        {
-          connection->send_close(1000);
-        }
       };
     }
 
-    if (strcmp(client->on_message.target_type().name(), "v") == 0)
+#ifdef DEBUG
+    if (!client->on_message)
     {
-      if (callback)
-      {
-        client->on_message = callback;
-      }
-      else
-      {
-#ifdef DEBUG
-        client->on_message = [client_name, one_message](std::shared_ptr<WsClient::Connection> connection, std::shared_ptr<WsClient::Message> message) {
-#else
-        client->on_message = [one_message](std::shared_ptr<WsClient::Connection> connection, std::shared_ptr<WsClient::Message> message) {
-#endif
-
-#ifdef DEBUG
-          std::cout << "Client " << client_name << ": Message received: \"" << message->string() << "\"" << std::endl;
-#endif
-
-          if (one_message)
-          {
-#ifdef DEBUG
-            std::cout << "Client " << client_name << ": Sending close connection" << std::endl;
-#endif
-            connection->send_close(1000);
-          }
-        };
-      }
+      client->on_message = [client_name](std::shared_ptr<WsClient::Connection> connection, std::shared_ptr<WsClient::Message> message) {
+        std::cout << "Client " << client_name << ": Message received: \"" << message->string() << "\"" << std::endl;
+      };
     }
 
-    if (strcmp(client->on_close.target_type().name(), "v") == 0)
+    if (!client->on_close)
     {
-#ifdef DEBUG
       client->on_close = [client_name](std::shared_ptr<WsClient::Connection> /*connection*/, int status, const std::string & /*reason*/) {
-#else
-      client->on_close = [](std::shared_ptr<WsClient::Connection> /*connection*/, int status, const std::string & /*reason*/) {
-#endif
-
-#ifdef DEBUG
         std::cout << "Client " << client_name << ": Closed connection with status code " << status << std::endl;
-#endif
       };
     }
 
-    if (strcmp(client->on_error.target_type().name(), "v") == 0)
+    if (!client->on_error)
     {
       // See http://www.boost.org/doc/libs/1_55_0/doc/html/boost_asio/reference.html, Error Codes for error code meanings
-#ifdef DEBUG
       client->on_error = [client_name](std::shared_ptr<WsClient::Connection> /*connection*/, const SimpleWeb::error_code &ec) {
-#else
-      client->on_error = [](std::shared_ptr<WsClient::Connection> /*connection*/, const SimpleWeb::error_code &ec) {
-#endif
-
-#ifdef DEBUG
         std::cout << "Client " << client_name << ": Error: " << ec << ", error message: " << ec.message() << std::endl;
-#endif
       };
     }
+#endif
 
 #ifdef DEBUG
     std::thread client_thread([client_name, client]() {
@@ -122,6 +85,9 @@ class RosbridgeWsClient
     });
 
     client_thread.detach();
+
+    // This is to make sure that the thread got fully launched before we do anything to it (e.g. remove)
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
   }
 
 public:
@@ -174,6 +140,9 @@ public:
       it->second->on_message = NULL;
       it->second->on_close = NULL;
       it->second->on_error = NULL;
+#ifdef DEBUG
+      std::cout << client_name << " has been stopped" << std::endl;
+#endif
     }
 #ifdef DEBUG
     else
@@ -215,7 +184,7 @@ public:
         message += ", \"id\":\"" + id + "\"";
       }
 
-      start(client_name, it->second, "{" + message + "}", NULL, true);
+      start(client_name, it->second, "{" + message + "}");
     }
 #ifdef DEBUG
     else
@@ -240,8 +209,27 @@ public:
       {
         message += ", \"id\":\"" + id + "\"";
       }
+      message = "{" + message + "}";
 
-      start(client_name, it->second, "{" + message + "}", NULL, false);
+#ifdef DEBUG
+      it->second->on_open = [client_name, message](std::shared_ptr<WsClient::Connection> connection) {
+#else
+      it->second->on_open = [message](std::shared_ptr<WsClient::Connection> connection) {
+#endif
+
+#ifdef DEBUG
+        std::cout << "Client " << client_name << ": Opened connection" << std::endl;
+        std::cout << "Client " << client_name << ": Sending message: \"" << message << "\"" << std::endl;
+#endif
+        auto send_stream = std::make_shared<WsClient::SendStream>();
+        *send_stream << message;
+        connection->send(send_stream);
+
+        // TODO: This could be improved by creating a thread to keep publishing the message instead of closing it right away
+        connection->send_close(1000);
+      };
+
+      start(client_name, it->second, message);
     }
 #ifdef DEBUG
     else
@@ -251,7 +239,7 @@ public:
 #endif
   }
 
-  void subscribe(const std::string& client_name, const std::string& topic, const std::function<void(std::shared_ptr<WsClient::Connection> connection, std::shared_ptr<WsClient::Message> message)>& callback, const std::string& id = "", const std::string& type = "", int throttle_rate = -1, int queue_length = -1, int fragment_size = -1, const std::string& compression = "")
+  void subscribe(const std::string& client_name, const std::string& topic, const OnMessage& callback, const std::string& id = "", const std::string& type = "", int throttle_rate = -1, int queue_length = -1, int fragment_size = -1, const std::string& compression = "")
   {
     std::unordered_map<std::string, WsClient*>::iterator it = client_map.find(client_name);
     if (it != client_map.end())
@@ -283,7 +271,8 @@ public:
         message += ", \"compression\":\"" + compression + "\"";
       }
 
-      start(client_name, it->second, "{" + message + "}", callback, true, false);
+      it->second->on_message = callback;
+      start(client_name, it->second, "{" + message + "}");
     }
 #ifdef DEBUG
     else
@@ -293,7 +282,53 @@ public:
 #endif
   }
 
-  void callService(const std::string& client_name, const std::string& service, const std::function<void(std::shared_ptr<WsClient::Connection> connection, std::shared_ptr<WsClient::Message> message)>& callback, const std::string& id = "", const std::list<rapidjson::Document>& args = {}, int fragment_size = -1, const std::string& compression = "")
+  void advertiseService(const std::string& client_name, const std::string& service, const std::string& type, const OnMessage& callback)
+  {
+    std::unordered_map<std::string, WsClient*>::iterator it = client_map.find(client_name);
+    if (it != client_map.end())
+    {
+      std::string message = "\"op\":\"advertise_service\", \"service\":\"" + service + "\", \"type\":\"" + type + "\"";
+
+      it->second->on_message = callback;
+      start(client_name, it->second, "{" + message + "}");
+    }
+#ifdef DEBUG
+    else
+    {
+      std::cerr << client_name << "has not been created" << std::endl;
+    }
+#endif
+  }
+
+  void serviceResponse(const rapidjson::Value& service_request, bool result, const std::vector<rapidjson::Document>& values = {})
+  {
+    std::string message = "\"op\":\"service_response\", \"service\":\"" + std::string(service_request["service"].GetString()) + "\", \"result\":" + ((result)? "true" : "false");
+
+    // Rosbridge somehow does not allow service_response to be sent without id and values
+    message += ", \"id\":\"" + std::string(service_request["id"].GetString()) + "\"";
+
+    message += ", \"values\":[";
+    if (values.size() > 0)
+    {
+      rapidjson::StringBuffer buffer;
+      rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
+
+      values[0].Accept(writer);
+      message += std::string(buffer.GetString());
+
+      for (int i = 1; i < values.size(); i++)
+      {
+        values[i].Accept(writer);
+        message += ", " + std::string(buffer.GetString());
+      }
+    }
+    message += "]";
+
+//    TODO
+//    start(client_name, it->second, "{" + message + "}");
+  }
+
+  void callService(const std::string& client_name, const std::string& service, const OnMessage& callback, const std::string& id = "", const std::vector<rapidjson::Document>& args = {}, int fragment_size = -1, const std::string& compression = "")
   {
     std::unordered_map<std::string, WsClient*>::iterator it = client_map.find(client_name);
     if (it != client_map.end())
@@ -306,7 +341,21 @@ public:
       }
       if (args.size() > 0)
       {
-        // TODO
+        message += ", \"args\":[";
+
+        rapidjson::StringBuffer buffer;
+        rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
+
+        args[0].Accept(writer);
+        message += std::string(buffer.GetString());
+
+        for (int i = 1; i < args.size(); i++)
+        {
+          args[i].Accept(writer);
+          message += ", " + std::string(buffer.GetString());
+        }
+
+        message += "]";
       }
       if (fragment_size > -1)
       {
@@ -317,50 +366,27 @@ public:
         message += ", \"compression\":\"" + compression + "\"";
       }
 
-      start(client_name, it->second, "{" + message + "}", callback, true, true);
-    }
-#ifdef DEBUG
-    else
-    {
-      std::cerr << client_name << "has not been created" << std::endl;
-    }
-#endif
-  }
-
-  void advertiseService(const std::string& client_name, const std::string& service, const std::string& type, const std::function<void(std::shared_ptr<WsClient::Connection> connection, std::shared_ptr<WsClient::Message> message)>& callback)
-  {
-    std::unordered_map<std::string, WsClient*>::iterator it = client_map.find(client_name);
-    if (it != client_map.end())
-    {
-      std::string message = "\"op\":\"advertise_service\", \"service\":\"" + service + "\", \"type\":\"" + type + "\"";
-
-      start(client_name, it->second, "{" + message + "}", callback, true, false);
-    }
-#ifdef DEBUG
-    else
-    {
-      std::cerr << client_name << "has not been created" << std::endl;
-    }
-#endif
-  }
-
-  void serviceResponse(const std::string& client_name, const std::string& service, bool result, const std::string& id = "", const std::list<rapidjson::Document>& values = {})
-  {
-    std::unordered_map<std::string, WsClient*>::iterator it = client_map.find(client_name);
-    if (it != client_map.end())
-    {
-      std::string message = "\"op\":\"service_response\", \"service\":\"" + service + "\", \"result\":" + ((result)? "true" : "false");
-
-      if (id.compare("") != 0)
+      if (callback)
       {
-        message += ", \"id\":\"" + id + "\"";
+        it->second->on_message = callback;
       }
-      if (values.size() > 0)
+      else
       {
-        // TODO
+#ifdef DEBUG
+        it->second->on_message = [client_name](std::shared_ptr<WsClient::Connection> connection, std::shared_ptr<WsClient::Message> message) {
+#else
+        it->second->on_message = [](std::shared_ptr<WsClient::Connection> connection, std::shared_ptr<WsClient::Message> message) {
+#endif
+
+#ifdef DEBUG
+          std::cout << "Client " << client_name << ": Message received: \"" << message->string() << "\"" << std::endl;
+          std::cout << "Client " << client_name << ": Sending close connection" << std::endl;
+#endif
+          connection->send_close(1000);
+        };
       }
 
-      start(client_name, it->second, "{" + message + "}", NULL, false);
+      start(client_name, it->second, "{" + message + "}");
     }
 #ifdef DEBUG
     else
