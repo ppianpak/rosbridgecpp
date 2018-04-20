@@ -22,7 +22,21 @@ void callback2(std::shared_ptr<WsClient::Connection> connection, std::shared_ptr
   connection->send(send_stream);
 }
 
+
+class Test { public: ~Test() { std::puts("Test destroyed."); } };
+
 int main() {
+  {
+  std::shared_ptr<Test> p = std::make_shared<Test>();
+  std::shared_ptr<Test> q = p;
+  std::cout << "use_count: " << q.use_count() << std::endl;
+//  std::puts("p.reset()...");
+//  p.reset();
+//  std::puts("q.reset()...");
+//  q.reset();
+  }
+  std::puts("done");
+
   // 1. Parse a JSON string into DOM.
   const char* json = "{\"project\":\"rapidjson\",\"stars\":10}";
   rapidjson::Document d;

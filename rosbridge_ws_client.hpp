@@ -22,9 +22,9 @@ using OnMessage =  std::function<void(std::shared_ptr<WsClient::Connection>, std
 class RosbridgeWsClient
 {
   std::string server_port_path;
-  std::unordered_map<std::string, WsClient*> client_map;
+  std::unordered_map<std::string, std::shared_ptr<WsClient>> client_map;
 
-  void start(const std::string& client_name, WsClient* client, const std::string& message)
+  void start(const std::string& client_name, std::shared_ptr<WsClient> client, const std::string& message)
   {
     if (!client->on_open)
     {
@@ -98,19 +98,19 @@ public:
 
   ~RosbridgeWsClient()
   {
-    for (const auto &client : client_map)
+    for (auto &client : client_map)
     {
       client.second->stop();
-      delete client.second;
+      client.second.reset();
     }
   }
 
   void addClient(const std::string& client_name)
   {
-    std::unordered_map<std::string, WsClient*>::iterator it = client_map.find(client_name);
+    std::unordered_map<std::string, std::shared_ptr<WsClient>>::iterator it = client_map.find(client_name);
     if (it == client_map.end())
     {
-      client_map[client_name] = new WsClient(server_port_path);
+      client_map[client_name] = std::make_shared<WsClient>(server_port_path);
     }
 #ifdef DEBUG
     else
@@ -120,9 +120,9 @@ public:
 #endif
   }
 
-  WsClient* getClient(const std::string& client_name)
+  std::shared_ptr<WsClient> getClient(const std::string& client_name)
   {
-    std::unordered_map<std::string, WsClient*>::iterator it = client_map.find(client_name);
+    std::unordered_map<std::string, std::shared_ptr<WsClient>>::iterator it = client_map.find(client_name);
     if (it != client_map.end())
     {
       return it->second;
@@ -132,7 +132,7 @@ public:
 
   void stopClient(const std::string& client_name)
   {
-    std::unordered_map<std::string, WsClient*>::iterator it = client_map.find(client_name);
+    std::unordered_map<std::string, std::shared_ptr<WsClient>>::iterator it = client_map.find(client_name);
     if (it != client_map.end())
     {
       it->second->stop();
@@ -154,12 +154,12 @@ public:
 
   void removeClient(const std::string& client_name)
   {
-    std::unordered_map<std::string, WsClient*>::iterator it = client_map.find(client_name);
+    std::unordered_map<std::string, std::shared_ptr<WsClient>>::iterator it = client_map.find(client_name);
     if (it != client_map.end())
     {
       it->second->stop();
+      it->second.reset();
       client_map.erase(it);
-      delete it->second;
 #ifdef DEBUG
       std::cout << client_name << " has been removed" << std::endl;
 #endif
@@ -174,7 +174,7 @@ public:
 
   void advertise(const std::string& client_name, const std::string& topic, const std::string& type, const std::string& id = "")
   {
-    std::unordered_map<std::string, WsClient*>::iterator it = client_map.find(client_name);
+    std::unordered_map<std::string, std::shared_ptr<WsClient>>::iterator it = client_map.find(client_name);
     if (it != client_map.end())
     {
       std::string message = "\"op\":\"advertise\", \"topic\":\"" + topic + "\", \"type\":\"" + type + "\"";
@@ -196,7 +196,7 @@ public:
 
   void publish(const std::string& client_name, const std::string& topic, const rapidjson::Document& msg, const std::string& id = "")
   {
-    std::unordered_map<std::string, WsClient*>::iterator it = client_map.find(client_name);
+    std::unordered_map<std::string, std::shared_ptr<WsClient>>::iterator it = client_map.find(client_name);
     if (it != client_map.end())
     {
       rapidjson::StringBuffer strbuf;
@@ -241,7 +241,7 @@ public:
 
   void subscribe(const std::string& client_name, const std::string& topic, const OnMessage& callback, const std::string& id = "", const std::string& type = "", int throttle_rate = -1, int queue_length = -1, int fragment_size = -1, const std::string& compression = "")
   {
-    std::unordered_map<std::string, WsClient*>::iterator it = client_map.find(client_name);
+    std::unordered_map<std::string, std::shared_ptr<WsClient>>::iterator it = client_map.find(client_name);
     if (it != client_map.end())
     {
       std::string message = "\"op\":\"subscribe\", \"topic\":\"" + topic + "\"";
@@ -284,7 +284,7 @@ public:
 
   void advertiseService(const std::string& client_name, const std::string& service, const std::string& type, const OnMessage& callback)
   {
-    std::unordered_map<std::string, WsClient*>::iterator it = client_map.find(client_name);
+    std::unordered_map<std::string, std::shared_ptr<WsClient>>::iterator it = client_map.find(client_name);
     if (it != client_map.end())
     {
       std::string message = "\"op\":\"advertise_service\", \"service\":\"" + service + "\", \"type\":\"" + type + "\"";
@@ -330,7 +330,7 @@ public:
 
   void callService(const std::string& client_name, const std::string& service, const OnMessage& callback, const std::string& id = "", const std::vector<rapidjson::Document>& args = {}, int fragment_size = -1, const std::string& compression = "")
   {
-    std::unordered_map<std::string, WsClient*>::iterator it = client_map.find(client_name);
+    std::unordered_map<std::string, std::shared_ptr<WsClient>>::iterator it = client_map.find(client_name);
     if (it != client_map.end())
     {
       std::string message = "\"op\":\"call_service\", \"service\":\"" + service + "\"";
