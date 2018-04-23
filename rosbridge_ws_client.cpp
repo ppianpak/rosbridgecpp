@@ -5,92 +5,117 @@
 
 #include "rosbridge_ws_client.hpp"
 
+#include <future>
+
 RosbridgeWsClient rbc("localhost:9090");
 
-void callback(std::shared_ptr<WsClient::Connection> connection, std::shared_ptr<WsClient::Message> message)
+void advertiseServiceCallback(std::shared_ptr<WsClient::Connection> connection, std::shared_ptr<WsClient::Message> message)
 {
-//  std::cout << "callback: " << message->string() << std::endl;
-}
-
-void callback2(std::shared_ptr<WsClient::Connection> connection, std::shared_ptr<WsClient::Message> message)
-{
-  std::cout << "callback2: " << message->string() << std::endl;
-
-  auto send_stream = std::make_shared<WsClient::SendStream>();
-  std::string m = "{\"op\":\"service_response\", \"service\":\"/zservice\", \"result\":true, \"id\":\"service_request:/zservice:1\", \"values\":{}}";
-  *send_stream << m;
-  connection->send(send_stream);
-}
-
-
-class Test { public: ~Test() { std::puts("Test destroyed."); } };
-
-int main() {
-  {
-  std::shared_ptr<Test> p = std::make_shared<Test>();
-  std::shared_ptr<Test> q = p;
-  std::cout << "use_count: " << q.use_count() << std::endl;
-//  std::puts("p.reset()...");
-//  p.reset();
-//  std::puts("q.reset()...");
-//  q.reset();
-  }
-  std::puts("done");
-
-  // 1. Parse a JSON string into DOM.
-  const char* json = "{\"project\":\"rapidjson\",\"stars\":10}";
-  rapidjson::Document d;
-  d.Parse(json);
+  // message->string() is destructive, so we have to buffer it first
+  std::string messagebuf = message->string();
+  std::cout << "advertiseServiceCallback(): Message Received: " << messagebuf << std::endl;
 
   rapidjson::Document document;
-  document.SetObject();
-  document.AddMember("abc", "def", document.GetAllocator());
-  std::cout << document["abc"].GetString() << std::endl;
+  if (document.Parse(messagebuf.c_str()).HasParseError())
+  {
+    std::cerr << "advertiseServiceCallback(): Error in parsing service request message: " << messagebuf << std::endl;
+    return;
+  }
 
-  // 3. Stringify the DOM
-  rapidjson::StringBuffer buffer;
-  rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
-  d.Accept(writer);
-  std::cout << buffer.GetString() << std::endl;
+  rapidjson::Document values(rapidjson::kObjectType);
+  rapidjson::Document::AllocatorType& allocator = values.GetAllocator();
+  values.AddMember("success", document["args"]["data"].GetBool(), allocator);
+  values.AddMember("message", "from advertiseServiceCallback", allocator);
 
-  rbc.addClient("client01");
-  rbc.addClient("client02");
-  rbc.addClient("client03");
-//  rbc.addClient("client04");
-//  rbc.subscribe("client04", "/uav0/ground_truth_to_tf/pose", nullptr);
-//  rbc.addClient("client05");
-//  rbc.subscribe("client05", "/uav0/ground_truth_to_tf/pose", nullptr);
+  rbc.serviceResponse(document["service"].GetString(), document["id"].GetString(), true, values);
+}
 
-  rbc.advertise("client01", "/z", "std_msgs/Int32");
-  rapidjson::Document dd;
-  dd.SetObject();
-  dd.AddMember("data", 12345, dd.GetAllocator());
-  rbc.publish("client02", "/z", dd);
+void callServiceCallback(std::shared_ptr<WsClient::Connection> connection, std::shared_ptr<WsClient::Message> message)
+{
+  std::cout << "serviceResponseCallback(): Message Received: " << message->string() << std::endl;
+  connection->send_close(1000);
+}
 
-  std::cout << "-> Sleeping1" << std::endl;
-  std::this_thread::sleep_for(std::chrono::milliseconds(5000));
-  std::cout << "& Sleeping1" << std::endl;
+void publisherThread(RosbridgeWsClient& rbc, std::future<void> futureObj)
+{
+  rbc.addClient("topic_publisher");
 
-  rbc.removeClient("client02");
+  rapidjson::Document d;
+  d.SetObject();
+  d.AddMember("data", "Test message from /ztopic", d.GetAllocator());
 
-  std::cout << "-> Sleeping2" << std::endl;
-  std::this_thread::sleep_for(std::chrono::milliseconds(5000));
-  std::cout << "& Sleeping2" << std::endl;
+  while (futureObj.wait_for(std::chrono::milliseconds(1)) == std::future_status::timeout)
+  {
+    rbc.publish("/ztopic", d);
+    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+  }
 
-//  rbc.advertiseService("client02", "/zservice", "std_srvs/Empty", NULL);
-//  rbc.subscribe("client03", "/uav0/ground_truth_to_tf/pose", callback);
-//
-//  while(true)
-//  {
-//    rapidjson::Document d;
-//    d.SetObject();
-//    d.AddMember("data", 12345, d.GetAllocator());
-//    rbc.publish("client04", "/z", d);
-//    std::this_thread::sleep_for(std::chrono::milliseconds(2000));
-//  }
+  std::cout << "publisherThread stops()" << std::endl;
+}
 
-//  rbc.stopClient("client03");
-//  std::cout << "-> Sleeping2" << std::endl;
-//  std::this_thread::sleep_for(std::chrono::milliseconds(1000));
-//  std::cout << "& Sleeping2" << std::endl;
+void subscriberCallback(std::shared_ptr<WsClient::Connection> connection, std::shared_ptr<WsClient::Message> message)
+{
+  std::cout << "subscriberCallback(): Message Received: " << message->string() << std::endl;
+}
+
+void output(const rapidjson::Document& document)
+{
+  // treat object types similar to std::map when querying
+  std::cout << document["hello"].GetString() << std::endl;
+  std::cout << document["number"].GetInt() << std::endl;
+
+  // requires SizeType since the literal zero in c++ can mean a
+  // numeric type (int, unsigned, etc.) or a null pointer of any type
+  std::cout << document["array"][rapidjson::SizeType(0)].GetString() << std::endl;
+
+  std::cout << document["array"][1].GetString() << std::endl;
+
+  std::cout << document["object"]["hello"].GetString() << std::endl;
+}
+
+
+int main() {
+  rbc.addClient("service_advertiser");
+  rbc.advertiseService("service_advertiser", "/zservice", "std_srvs/SetBool", advertiseServiceCallback);
+
+  rbc.addClient("topic_advertiser");
+  rbc.advertise("topic_advertiser", "/ztopic", "std_msgs/String");
+
+  rbc.addClient("topic_subscriber");
+  rbc.subscribe("topic_subscriber", "/ztopic", subscriberCallback);
+
+  // Test calling a service
+  rapidjson::Document document(rapidjson::kObjectType);
+  document.AddMember("data", true, document.GetAllocator());
+  rbc.callService("/zservice", callServiceCallback, document);
+
+  // Test creating and stopping a publisher
+  {
+    // Create a std::promise object
+    std::promise<void> exitSignal;
+
+    // Fetch std::future object associated with promise
+    std::future<void> futureObj = exitSignal.get_future();
+
+    // Starting Thread & move the future object in lambda function by reference
+    std::thread th(&publisherThread, std::ref(rbc), std::move(futureObj));
+
+    // Wait for 10 sec
+    std::this_thread::sleep_for(std::chrono::seconds(10));
+
+    std::cout << "Asking publisherThread to Stop" << std::endl;
+
+    // Set the value in promise
+    exitSignal.set_value();
+
+    // Wait for thread to join
+    th.join();
+  }
+
+  // Test removing clients
+  rbc.removeClient("service_advertiser");
+  rbc.removeClient("topic_advertiser");
+  rbc.removeClient("topic_subscriber");
+
+  std::cout << "Program terminated" << std::endl;
 }
