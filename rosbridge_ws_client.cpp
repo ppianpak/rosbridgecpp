@@ -58,22 +58,6 @@ void subscriberCallback(std::shared_ptr<WsClient::Connection> connection, std::s
   std::cout << "subscriberCallback(): Message Received: " << message->string() << std::endl;
 }
 
-void output(const rapidjson::Document& document)
-{
-  // treat object types similar to std::map when querying
-  std::cout << document["hello"].GetString() << std::endl;
-  std::cout << document["number"].GetInt() << std::endl;
-
-  // requires SizeType since the literal zero in c++ can mean a
-  // numeric type (int, unsigned, etc.) or a null pointer of any type
-  std::cout << document["array"][rapidjson::SizeType(0)].GetString() << std::endl;
-
-  std::cout << document["array"][1].GetString() << std::endl;
-
-  std::cout << document["object"]["hello"].GetString() << std::endl;
-}
-
-
 int main() {
   rbc.addClient("service_advertiser");
   rbc.advertiseService("service_advertiser", "/zservice", "std_srvs/SetBool", advertiseServiceCallback);
