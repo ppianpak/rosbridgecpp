@@ -1,10 +1,9 @@
 cmake_minimum_required(VERSION 3.0)
 project(rosbridgecpp)
 
+add_compile_options(-std=c++11)
+
 option(DEBUG "Print debug messages" ON)
-
-add_definitions(-std=c++11)
-
 if(DEBUG)
   add_definitions(-DDEBUG)
 endif()
