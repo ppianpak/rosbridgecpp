@@ -47,7 +47,7 @@ class RosbridgeWsClient
 #ifdef DEBUG
     if (!client->on_message)
     {
-      client->on_message = [client_name](std::shared_ptr<WsClient::Connection> connection, std::shared_ptr<WsClient::Message> message) {
+      client->on_message = [client_name](std::shared_ptr<WsClient::Connection> /*connection*/, std::shared_ptr<WsClient::Message> message) {
         std::cout << client_name << ": Message received: " << message->string() << std::endl;
       };
     }

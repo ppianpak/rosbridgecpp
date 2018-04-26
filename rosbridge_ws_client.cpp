@@ -9,7 +9,7 @@
 
 RosbridgeWsClient rbc("localhost:9090");
 
-void advertiseServiceCallback(std::shared_ptr<WsClient::Connection> connection, std::shared_ptr<WsClient::Message> message)
+void advertiseServiceCallback(std::shared_ptr<WsClient::Connection> /*connection*/, std::shared_ptr<WsClient::Message> message)
 {
   // message->string() is destructive, so we have to buffer it first
   std::string messagebuf = message->string();
@@ -53,7 +53,7 @@ void publisherThread(RosbridgeWsClient& rbc, std::future<void> futureObj)
   std::cout << "publisherThread stops()" << std::endl;
 }
 
-void subscriberCallback(std::shared_ptr<WsClient::Connection> connection, std::shared_ptr<WsClient::Message> message)
+void subscriberCallback(std::shared_ptr<WsClient::Connection> /*connection*/, std::shared_ptr<WsClient::Message> message)
 {
   std::cout << "subscriberCallback(): Message Received: " << message->string() << std::endl;
 }
