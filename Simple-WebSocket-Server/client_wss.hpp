@@ -1,5 +1,5 @@
-#ifndef CLIENT_WSS_HPP
-#define CLIENT_WSS_HPP
+#ifndef SIMPLE_WEB_CLIENT_WSS_HPP
+#define SIMPLE_WEB_CLIENT_WSS_HPP
 
 #include "client_ws.hpp"
 
@@ -42,41 +42,76 @@ namespace SimpleWeb {
     asio::ssl::context context;
 
     void connect() override {
-      std::unique_lock<std::mutex> connection_lock(connection_mutex);
+      LockGuard connection_lock(connection_mutex);
       auto connection = this->connection = std::shared_ptr<Connection>(new Connection(handler_runner, config.timeout_idle, *io_service, context));
       connection_lock.unlock();
-      asio::ip::tcp::resolver::query query(host, std::to_string(port));
+
+      std::pair<std::string, std::string> host_port;
+      if(config.proxy_server.empty())
+        host_port = {host, std::to_string(port)};
+      else {
+        auto proxy_host_port = parse_host_port(config.proxy_server, 8080);
+        host_port = {proxy_host_port.first, std::to_string(proxy_host_port.second)};
+      }
+
       auto resolver = std::make_shared<asio::ip::tcp::resolver>(*io_service);
       connection->set_timeout(config.timeout_request);
-      resolver->async_resolve(query, [this, connection, resolver](const error_code &ec, asio::ip::tcp::resolver::iterator it) {
+      async_resolve(*resolver, host_port, [this, connection, resolver](const error_code &ec, resolver_results results) {
         connection->cancel_timeout();
         auto lock = connection->handler_runner->continue_lock();
         if(!lock)
           return;
         if(!ec) {
           connection->set_timeout(this->config.timeout_request);
-          asio::async_connect(connection->socket->lowest_layer(), it, [this, connection, resolver](const error_code &ec, asio::ip::tcp::resolver::iterator /*it*/) {
+          asio::async_connect(connection->socket->lowest_layer(), results, [this, connection, resolver](const error_code &ec, async_connect_endpoint /*endpoint*/) {
             connection->cancel_timeout();
             auto lock = connection->handler_runner->continue_lock();
             if(!lock)
               return;
             if(!ec) {
               asio::ip::tcp::no_delay option(true);
-              connection->socket->lowest_layer().set_option(option);
+              error_code ec;
+              connection->socket->lowest_layer().set_option(option, ec);
 
-              SSL_set_tlsext_host_name(connection->socket->native_handle(), this->host.c_str());
-
-              connection->set_timeout(this->config.timeout_request);
-              connection->socket->async_handshake(asio::ssl::stream_base::client, [this, connection](const error_code &ec) {
-                connection->cancel_timeout();
-                auto lock = connection->handler_runner->continue_lock();
-                if(!lock)
-                  return;
-                if(!ec)
-                  handshake(connection);
-                else
-                  this->connection_error(connection, ec);
-              });
+              if(!this->config.proxy_server.empty()) {
+                auto write_buffer = std::make_shared<asio::streambuf>();
+                std::ostream write_stream(write_buffer.get());
+                auto host_port = this->host + ':' + std::to_string(this->port);
+                write_stream << "CONNECT " + host_port + " HTTP/1.1\r\n"
+                             << "Host: " << host_port << "\r\n\r\n";
+                connection->set_timeout(this->config.timeout_request);
+                asio::async_write(connection->socket->next_layer(), *write_buffer, [this, connection, write_buffer](const error_code &ec, std::size_t /*bytes_transferred*/) {
+                  connection->cancel_timeout();
+                  auto lock = connection->handler_runner->continue_lock();
+                  if(!lock)
+                    return;
+                  if(!ec) {
+                    connection->set_timeout(this->config.timeout_request);
+                    asio::async_read_until(connection->socket->next_layer(), connection->in_message->streambuf, "\r\n\r\n", [this, connection](const error_code &ec, std::size_t /*bytes_transferred*/) {
+                      connection->cancel_timeout();
+                      auto lock = connection->handler_runner->continue_lock();
+                      if(!lock)
+                        return;
+                      if(!ec) {
+                        if(!ResponseMessage::parse(*connection->in_message, connection->http_version, connection->status_code, connection->header))
+                          this->connection_error(connection, make_error_code::make_error_code(errc::protocol_error));
+                        else {
+                          if(connection->status_code.compare(0, 3, "200") != 0)
+                            this->connection_error(connection, make_error_code::make_error_code(errc::permission_denied));
+                          else
+                            this->handshake(connection);
+                        }
+                      }
+                      else
+                        this->connection_error(connection, ec);
+                    });
+                  }
+                  else
+                    this->connection_error(connection, ec);
+                });
+              }
+              else
+                this->handshake(connection);
             }
             else
               this->connection_error(connection, ec);
@@ -86,7 +121,23 @@ namespace SimpleWeb {
           this->connection_error(connection, ec);
       });
     }
+
+    void handshake(const std::shared_ptr<Connection> &connection) {
+      SSL_set_tlsext_host_name(connection->socket->native_handle(), this->host.c_str());
+
+      connection->set_timeout(this->config.timeout_request);
+      connection->socket->async_handshake(asio::ssl::stream_base::client, [this, connection](const error_code &ec) {
+        connection->cancel_timeout();
+        auto lock = connection->handler_runner->continue_lock();
+        if(!lock)
+          return;
+        if(!ec)
+          upgrade(connection);
+        else
+          this->connection_error(connection, ec);
+      });
+    }
   };
 } // namespace SimpleWeb
 
-#endif /* CLIENT_WSS_HPP */
+#endif /* SIMPLE_WEB_CLIENT_WSS_HPP */

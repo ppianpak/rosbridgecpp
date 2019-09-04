@@ -269,16 +269,11 @@
 /*! \ingroup RAPIDJSON_CONFIG
     \param x pointer to align
 
-    Some machines require strict data alignment. Currently the default uses 4 bytes
-    alignment on 32-bit platforms and 8 bytes alignment for 64-bit platforms.
+    Some machines require strict data alignment. The default is 8 bytes.
     User can customize by defining the RAPIDJSON_ALIGN function macro.
 */
 #ifndef RAPIDJSON_ALIGN
-#if RAPIDJSON_64BIT == 1
-#define RAPIDJSON_ALIGN(x) (((x) + static_cast<uint64_t>(7u)) & ~static_cast<uint64_t>(7u))
-#else
-#define RAPIDJSON_ALIGN(x) (((x) + 3u) & ~3u)
-#endif
+#define RAPIDJSON_ALIGN(x) (((x) + static_cast<size_t>(7u)) & ~static_cast<size_t>(7u))
 #endif
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -597,6 +592,32 @@ RAPIDJSON_NAMESPACE_END
 #endif // RAPIDJSON_HAS_CXX11_RANGE_FOR
 
 //!@endcond
+
+//! Assertion (in non-throwing contexts).
+ /*! \ingroup RAPIDJSON_CONFIG
+    Some functions provide a \c noexcept guarantee, if the compiler supports it.
+    In these cases, the \ref RAPIDJSON_ASSERT macro cannot be overridden to
+    throw an exception.  This macro adds a separate customization point for
+    such cases.
+
+    Defaults to C \c assert() (as \ref RAPIDJSON_ASSERT), if \c noexcept is
+    supported, and to \ref RAPIDJSON_ASSERT otherwise.
+ */
+
+///////////////////////////////////////////////////////////////////////////////
+// RAPIDJSON_NOEXCEPT_ASSERT
+
+#ifndef RAPIDJSON_NOEXCEPT_ASSERT
+#ifdef RAPIDJSON_ASSERT_THROWS
+#if RAPIDJSON_HAS_CXX11_NOEXCEPT
+#define RAPIDJSON_NOEXCEPT_ASSERT(x)
+#else
+#define RAPIDJSON_NOEXCEPT_ASSERT(x) RAPIDJSON_ASSERT(x)
+#endif // RAPIDJSON_HAS_CXX11_NOEXCEPT
+#else
+#define RAPIDJSON_NOEXCEPT_ASSERT(x) RAPIDJSON_ASSERT(x)
+#endif // RAPIDJSON_ASSERT_THROWS
+#endif // RAPIDJSON_NOEXCEPT_ASSERT
 
 ///////////////////////////////////////////////////////////////////////////////
 // new/delete

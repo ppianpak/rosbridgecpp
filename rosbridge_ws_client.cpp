@@ -1,6 +1,6 @@
 /*
  *  Created on: Apr 16, 2018
- *      Author: ppianpak
+ *      Author: Poom Pianpak
  */
 
 #include "rosbridge_ws_client.hpp"
@@ -9,10 +9,10 @@
 
 RosbridgeWsClient rbc("localhost:9090");
 
-void advertiseServiceCallback(std::shared_ptr<WsClient::Connection> /*connection*/, std::shared_ptr<WsClient::Message> message)
+void advertiseServiceCallback(std::shared_ptr<WsClient::Connection> /*connection*/, std::shared_ptr<WsClient::InMessage> in_message)
 {
   // message->string() is destructive, so we have to buffer it first
-  std::string messagebuf = message->string();
+  std::string messagebuf = in_message->string();
   std::cout << "advertiseServiceCallback(): Message Received: " << messagebuf << std::endl;
 
   rapidjson::Document document;
@@ -30,13 +30,13 @@ void advertiseServiceCallback(std::shared_ptr<WsClient::Connection> /*connection
   rbc.serviceResponse(document["service"].GetString(), document["id"].GetString(), true, values);
 }
 
-void callServiceCallback(std::shared_ptr<WsClient::Connection> connection, std::shared_ptr<WsClient::Message> message)
+void callServiceCallback(std::shared_ptr<WsClient::Connection> connection, std::shared_ptr<WsClient::InMessage> in_message)
 {
-  std::cout << "serviceResponseCallback(): Message Received: " << message->string() << std::endl;
+  std::cout << "serviceResponseCallback(): Message Received: " << in_message->string() << std::endl;
   connection->send_close(1000);
 }
 
-void publisherThread(RosbridgeWsClient& rbc, std::future<void> futureObj)
+void publisherThread(RosbridgeWsClient& rbc, const std::future<void>& futureObj)
 {
   rbc.addClient("topic_publisher");
 
@@ -53,9 +53,9 @@ void publisherThread(RosbridgeWsClient& rbc, std::future<void> futureObj)
   std::cout << "publisherThread stops()" << std::endl;
 }
 
-void subscriberCallback(std::shared_ptr<WsClient::Connection> /*connection*/, std::shared_ptr<WsClient::Message> message)
+void subscriberCallback(std::shared_ptr<WsClient::Connection> /*connection*/, std::shared_ptr<WsClient::InMessage> in_message)
 {
-  std::cout << "subscriberCallback(): Message Received: " << message->string() << std::endl;
+  std::cout << "subscriberCallback(): Message Received: " << in_message->string() << std::endl;
 }
 
 int main() {
@@ -82,7 +82,7 @@ int main() {
     std::future<void> futureObj = exitSignal.get_future();
 
     // Starting Thread & move the future object in lambda function by reference
-    std::thread th(&publisherThread, std::ref(rbc), std::move(futureObj));
+    std::thread th(&publisherThread, std::ref(rbc), std::cref(futureObj));
 
     // Wait for 10 sec
     std::this_thread::sleep_for(std::chrono::seconds(10));

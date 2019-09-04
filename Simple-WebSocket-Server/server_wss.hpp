@@ -1,5 +1,5 @@
-#ifndef SERVER_WSS_HPP
-#define SERVER_WSS_HPP
+#ifndef SIMPLE_WEB_SERVER_WSS_HPP
+#define SIMPLE_WEB_SERVER_WSS_HPP
 
 #include "server_ws.hpp"
 #include <algorithm>
@@ -54,7 +54,7 @@ namespace SimpleWeb {
         if(!lock)
           return;
         // Immediately start accepting a new connection (if io_service hasn't been stopped)
-        if(ec != asio::error::operation_aborted)
+        if(ec != error::operation_aborted)
           accept();
 
         if(!ec) {
@@ -76,4 +76,4 @@ namespace SimpleWeb {
   };
 } // namespace SimpleWeb
 
-#endif /* SERVER_WSS_HPP */
+#endif /* SIMPLE_WEB_SERVER_WSS_HPP */

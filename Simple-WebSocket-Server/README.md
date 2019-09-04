@@ -1,5 +1,3 @@
-**_This project has moved to https://gitlab.com/eidheim/Simple-WebSocket-Server._**
-
 Simple-WebSocket-Server
 =================
 
@@ -21,7 +19,7 @@ See https://gitlab.com/eidheim/Simple-Web-Server for an easy way to make REST re
 
 ### Usage
 
-See ws_examples.cpp or wss_examples.cpp for example usage. 
+See [ws_examples.cpp](ws_examples.cpp) or [wss_examples.cpp](wss_examples.cpp) for example usage. 
 
 ### Dependencies
 
@@ -50,7 +48,7 @@ cd ..
 
 ### WSS
 
-Before running the WSS-examples, an RSA private key (server.key) and an SSL certificate (server.crt) must be created. Follow, for instance, the instructions given here (for a self-signed certificate): http://www.akadia.com/services/ssh_test_certificate.html
+Before running the WSS-examples, an RSA private key (server.key) and an SSL certificate (server.crt) must be created.
 
 Then:
 ```

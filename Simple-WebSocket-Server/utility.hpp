@@ -3,10 +3,27 @@
 
 #include "status_code.hpp"
 #include <atomic>
+#include <cstdlib>
 #include <iostream>
 #include <memory>
 #include <string>
 #include <unordered_map>
+
+#if __cplusplus > 201402L || _MSVC_LANG > 201402L
+#include <string_view>
+namespace SimpleWeb {
+  using string_view = std::string_view;
+}
+#elif !defined(USE_STANDALONE_ASIO)
+#include <boost/utility/string_ref.hpp>
+namespace SimpleWeb {
+  using string_view = boost::string_ref;
+}
+#else
+namespace SimpleWeb {
+  using string_view = const std::string &;
+}
+#endif
 
 namespace SimpleWeb {
   inline bool case_insensitive_equal(const std::string &str1, const std::string &str2) noexcept {
@@ -46,10 +63,8 @@ namespace SimpleWeb {
       result.reserve(value.size()); // Minimum size of result
 
       for(auto &chr : value) {
-        if(chr == ' ')
-          result += '+';
-        else if(chr == '!' || chr == '#' || chr == '$' || (chr >= '&' && chr <= ',') || (chr >= '/' && chr <= ';') || chr == '=' || chr == '?' || chr == '@' || chr == '[' || chr == ']')
-          result += std::string("%") + hex_chars[chr >> 4] + hex_chars[chr & 15];
+        if(!((chr >= '0' && chr <= '9') || (chr >= 'A' && chr <= 'Z') || (chr >= 'a' && chr <= 'z') || chr == '-' || chr == '.' || chr == '_' || chr == '~'))
+          result += std::string("%") + hex_chars[static_cast<unsigned char>(chr) >> 4] + hex_chars[static_cast<unsigned char>(chr) & 15];
         else
           result += chr;
       }
@@ -140,18 +155,13 @@ namespace SimpleWeb {
     static CaseInsensitiveMultimap parse(std::istream &stream) noexcept {
       CaseInsensitiveMultimap result;
       std::string line;
-      getline(stream, line);
       std::size_t param_end;
-      while((param_end = line.find(':')) != std::string::npos) {
+      while(getline(stream, line) && (param_end = line.find(':')) != std::string::npos) {
         std::size_t value_start = param_end + 1;
-        if(value_start < line.size()) {
-          if(line[value_start] == ' ')
-            value_start++;
-          if(value_start < line.size())
-            result.emplace(line.substr(0, param_end), line.substr(value_start, line.size() - value_start - 1));
-        }
-
-        getline(stream, line);
+        while(value_start + 1 < line.size() && line[value_start] == ' ')
+          ++value_start;
+        if(value_start < line.size())
+          result.emplace(line.substr(0, param_end), line.substr(value_start, line.size() - value_start - (line.back() == '\r' ? 1 : 0)));
       }
       return result;
     }
@@ -218,11 +228,9 @@ namespace SimpleWeb {
   public:
     /// Parse request line and header fields
     static bool parse(std::istream &stream, std::string &method, std::string &path, std::string &query_string, std::string &version, CaseInsensitiveMultimap &header) noexcept {
-      header.clear();
       std::string line;
-      getline(stream, line);
       std::size_t method_end;
-      if((method_end = line.find(' ')) != std::string::npos) {
+      if(getline(stream, line) && (method_end = line.find(' ')) != std::string::npos) {
         method = line.substr(0, method_end);
 
         std::size_t query_start = std::string::npos;
@@ -267,17 +275,15 @@ namespace SimpleWeb {
   public:
     /// Parse status line and header fields
     static bool parse(std::istream &stream, std::string &version, std::string &status_code, CaseInsensitiveMultimap &header) noexcept {
-      header.clear();
       std::string line;
-      getline(stream, line);
-      std::size_t version_end = line.find(' ');
-      if(version_end != std::string::npos) {
+      std::size_t version_end;
+      if(getline(stream, line) && (version_end = line.find(' ')) != std::string::npos) {
         if(5 < line.size())
           version = line.substr(5, version_end - 5);
         else
           return false;
         if((version_end + 1) < line.size())
-          status_code = line.substr(version_end + 1, line.size() - (version_end + 1) - 1);
+          status_code = line.substr(version_end + 1, line.size() - (version_end + 1) - (line.back() == '\r' ? 1 : 0));
         else
           return false;
 

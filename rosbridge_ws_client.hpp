@@ -1,6 +1,6 @@
 /*
  *  Created on: Apr 16, 2018
- *      Author: ppianpak
+ *      Author: Poom Pianpak
  */
 
 #ifndef ROSBRIDGECPP_ROSBRIDGE_WS_CLIENT_HPP_
@@ -17,14 +17,14 @@
 #include <thread>
 
 using WsClient = SimpleWeb::SocketClient<SimpleWeb::WS>;
-using OnMessage =  std::function<void(std::shared_ptr<WsClient::Connection>, std::shared_ptr<WsClient::Message>)>;
+using InMessage =  std::function<void(std::shared_ptr<WsClient::Connection>, std::shared_ptr<WsClient::InMessage>)>;
 
 class RosbridgeWsClient
 {
   std::string server_port_path;
   std::unordered_map<std::string, std::shared_ptr<WsClient>> client_map;
 
-  void start(const std::string& client_name, std::shared_ptr<WsClient> client, const std::string&& message)
+  void start(const std::string& client_name, std::shared_ptr<WsClient> client, const std::string& message)
   {
     if (!client->on_open)
     {
@@ -38,17 +38,15 @@ class RosbridgeWsClient
         std::cout << client_name << ": Opened connection" << std::endl;
         std::cout << client_name << ": Sending message: " << message << std::endl;
 #endif
-        auto send_stream = std::make_shared<WsClient::SendStream>();
-        *send_stream << message;
-        connection->send(send_stream);
+        connection->send(message);
       };
     }
 
 #ifdef DEBUG
     if (!client->on_message)
     {
-      client->on_message = [client_name](std::shared_ptr<WsClient::Connection> /*connection*/, std::shared_ptr<WsClient::Message> message) {
-        std::cout << client_name << ": Message received: " << message->string() << std::endl;
+      client->on_message = [client_name](std::shared_ptr<WsClient::Connection> /*connection*/, std::shared_ptr<WsClient::InMessage> in_message) {
+        std::cout << client_name << ": Message received: " << in_message->string() << std::endl;
       };
     }
 
@@ -185,7 +183,7 @@ public:
       }
       message = "{" + message + "}";
 
-      start(client_name, it->second, std::move(message));
+      start(client_name, it->second, message);
     }
 #ifdef DEBUG
     else
@@ -216,18 +214,16 @@ public:
       std::cout << "publish_client: Opened connection" << std::endl;
       std::cout << "publish_client: Sending message: " << message << std::endl;
 #endif
-      auto send_stream = std::make_shared<WsClient::SendStream>();
-      *send_stream << message;
-      connection->send(send_stream);
+      connection->send(message);
 
       // TODO: This could be improved by creating a thread to keep publishing the message instead of closing it right away
       connection->send_close(1000);
     };
 
-    start("publish_client", publish_client, std::move(message));
+    start("publish_client", publish_client, message);
   }
 
-  void subscribe(const std::string& client_name, const std::string& topic, const OnMessage& callback, const std::string& id = "", const std::string& type = "", int throttle_rate = -1, int queue_length = -1, int fragment_size = -1, const std::string& compression = "")
+  void subscribe(const std::string& client_name, const std::string& topic, const InMessage& callback, const std::string& id = "", const std::string& type = "", int throttle_rate = -1, int queue_length = -1, int fragment_size = -1, const std::string& compression = "")
   {
     std::unordered_map<std::string, std::shared_ptr<WsClient>>::iterator it = client_map.find(client_name);
     if (it != client_map.end())
@@ -261,7 +257,7 @@ public:
       message = "{" + message + "}";
 
       it->second->on_message = callback;
-      start(client_name, it->second, std::move(message));
+      start(client_name, it->second, message);
     }
 #ifdef DEBUG
     else
@@ -271,7 +267,7 @@ public:
 #endif
   }
 
-  void advertiseService(const std::string& client_name, const std::string& service, const std::string& type, const OnMessage& callback)
+  void advertiseService(const std::string& client_name, const std::string& service, const std::string& type, const InMessage& callback)
   {
     std::unordered_map<std::string, std::shared_ptr<WsClient>>::iterator it = client_map.find(client_name);
     if (it != client_map.end())
@@ -279,7 +275,7 @@ public:
       std::string message = "{\"op\":\"advertise_service\", \"service\":\"" + service + "\", \"type\":\"" + type + "\"}";
 
       it->second->on_message = callback;
-      start(client_name, it->second, std::move(message));
+      start(client_name, it->second, message);
     }
 #ifdef DEBUG
     else
@@ -312,17 +308,15 @@ public:
       std::cout << "service_response_client: Opened connection" << std::endl;
       std::cout << "service_response_client: Sending message: " << message << std::endl;
 #endif
-      auto send_stream = std::make_shared<WsClient::SendStream>();
-      *send_stream << message;
-      connection->send(send_stream);
+      connection->send(message);
 
       connection->send_close(1000);
     };
 
-    start("service_response_client", service_response_client, std::move(message));
+    start("service_response_client", service_response_client, message);
   }
 
-  void callService(const std::string& service, const OnMessage& callback, const rapidjson::Document& args = {}, const std::string& id = "", int fragment_size = -1, const std::string& compression = "")
+  void callService(const std::string& service, const InMessage& callback, const rapidjson::Document& args = {}, const std::string& id = "", int fragment_size = -1, const std::string& compression = "")
   {
     std::string message = "\"op\":\"call_service\", \"service\":\"" + service + "\"";
 
@@ -356,16 +350,16 @@ public:
     }
     else
     {
-      call_service_client->on_message = [](std::shared_ptr<WsClient::Connection> connection, std::shared_ptr<WsClient::Message> message) {
+      call_service_client->on_message = [](std::shared_ptr<WsClient::Connection> connection, std::shared_ptr<WsClient::InMessage> in_message) {
 #ifdef DEBUG
-        std::cout << "call_service_client: Message received: " << message->string() << std::endl;
+        std::cout << "call_service_client: Message received: " << in_message->string() << std::endl;
         std::cout << "call_service_client: Sending close connection" << std::endl;
 #endif
         connection->send_close(1000);
       };
     }
 
-    start("call_service_client", call_service_client, std::move(message));
+    start("call_service_client", call_service_client, message);
   }
 };
 

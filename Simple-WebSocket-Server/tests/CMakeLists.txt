@@ -1,5 +1,8 @@
 if(NOT MSVC)
     add_compile_options(-fno-access-control)
+    if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        add_compile_options(-Wno-thread-safety)
+    endif()
 
     add_executable(parse_test parse_test.cpp)
     target_link_libraries(parse_test simple-websocket-server)
